@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "MapReconstruct": {
+      "commandName": "Project",
+      "commandLineArgs": "updateWDT islands803.wdt islands803 \"listfile.csv\" true"
+    }
+  }
+}
