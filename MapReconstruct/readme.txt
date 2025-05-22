@@ -14,3 +14,11 @@ ADT naming:
 		4818263;world/maps/2454/2454_37_24_tex0.adt
 		4818264;world/maps/2454/2454_37_24_lod.adt
 	Where first part is the original filename without extension and the latter part is the reconstructed filename.
+
+Reference dumping:
+	Command line: dumpRefs inputDirectory
+	Sample usage: dumpRefs "D:\Downloads\unknown"
+	Input directory with ADTs (can be unnamed) will generate a list of used WMOs/M2s/BLPs from the MDDF, MODF, MHID and MDID chunks. If listfile.csv is present, it will also output filenames:
+		108785;World/WMO/Dungeon/BoreanMagnataurMicro/BoreanMagnataurMicro.wmo
+		189528;World/Azeroth/Duskwood/PassiveDoodads/tombs/DirtMound01.M2
+		5214448;tileset/expansion10/11nr_road01_512_s.blp

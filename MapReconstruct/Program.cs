@@ -30,16 +30,16 @@ namespace MapReconstruct
 
         static void Main(string[] args)
         {
-            if (args.Length < 3)
+            if (args.Length < 2)
             {
-                Console.WriteLine("Invalid arguments. For mode updateWDT use: MapReconstruct.exe updateWDT <input WDT location> <mapID> <listfile with ADTs> <(true for minimaps/maptextures)>. For mode updateADT use: MapReconstruct.exe nameADT <directory with ADTs> <target mapID>.");
+                Console.WriteLine("Invalid arguments. For mode updateWDT use: MapReconstruct.exe updateWDT <input WDT location> <mapID> <listfile with ADTs> <(true for minimaps/maptextures)>. For mode updateADT use: MapReconstruct.exe nameADT <directory with ADTs> <target mapID>. For mode dumpRefs <directory with ADTs>.");
                 return;
             }
 
             var mode = args[0];
-            if (mode != "updateWDT" && mode != "nameADT")
+            if (mode != "updateWDT" && mode != "nameADT" && mode != "dumpRefs")
             {
-                Console.WriteLine("Invalid mode, use updateWDT or nameADT as first argument");
+                Console.WriteLine("Invalid mode, use updateWDT, nameADT or dumpRefs as first argument");
                 return;
             }
 
@@ -276,7 +276,7 @@ namespace MapReconstruct
                                 else
                                     writer.Write((uint)2495665); // use empty _mpv file
 
-                                if(newMPHD.texFileDataID != 0)
+                                if (newMPHD.texFileDataID != 0)
                                     writer.Write(newMPHD.texFileDataID);
                                 else
                                     writer.Write((uint)1249780); // use empty tex file
@@ -345,7 +345,7 @@ namespace MapReconstruct
                     if (!maidFound)
                     {
                         // Set wdt_has_maid flag
-                        if((newFlags & 0x200) == 0)
+                        if ((newFlags & 0x200) == 0)
                         {
                             writer.BaseStream.Position = flagOffset;
                             writer.Write(newFlags | 0x200);
@@ -443,6 +443,154 @@ namespace MapReconstruct
                     }
                 }
             }
+
+            if (mode == "dumpRefs")
+            {
+                if (args.Length != 2)
+                {
+                    Console.WriteLine("Invalid arguments. Use MapReconstruct.exe dumpRefs <directory with ADTs>");
+                    return;
+                }
+
+                var inDir = args[1];
+                if (!Directory.Exists(inDir))
+                {
+                    Console.WriteLine("Input ADT directory does not exist");
+                    return;
+                }
+
+                var listfile = new Dictionary<uint, string>();
+
+                if (!File.Exists("listfile.csv"))
+                {
+                    Console.WriteLine("No listfile.csv found in application dir, will just dump FDIDs.");
+                }
+                else
+                {
+                    foreach (var line in File.ReadAllLines("listfile.csv"))
+                    {
+                        var listfileEntry = line.Split(';');
+                        if (listfileEntry.Length != 2)
+                            continue;
+
+                        var fdid = uint.Parse(listfileEntry[0]);
+                        var filename = listfileEntry[1];
+
+                        if (filename.ToLowerInvariant().EndsWith(".m2") || filename.ToLowerInvariant().EndsWith(".wmo") || filename.ToLowerInvariant().EndsWith(".blp"))
+                            listfile.Add(fdid, filename);
+                    }
+                }
+
+                var allFiles = new List<uint>();
+
+                foreach (var file in Directory.GetFiles(inDir, "*.adt", SearchOption.AllDirectories))
+                {
+                    var basename = Path.GetFileNameWithoutExtension(file);
+                    using (var stream = File.OpenRead(file))
+                    {
+                        var type = GetTypeFromFile(stream);
+                        if (type == "obj0")
+                        {
+                            var wmos = GetFilesFromADT(stream, "wmo");
+                            //foreach (var wmo in wmos)
+                            //{
+                            //    if (listfile.TryGetValue(wmo, out string? filename))
+                            //        Console.WriteLine(wmo + ";" + filename);
+                            //    else
+                            //        Console.WriteLine(wmo + ";");
+                            //}
+
+                            allFiles.AddRange(wmos);
+
+                            var m2s = GetFilesFromADT(stream, "m2");
+                            //foreach (var m2 in m2s)
+                            //{
+                            //    if (listfile.TryGetValue(m2, out string? filename))
+                            //        Console.WriteLine(m2 + ";" + filename);
+                            //    else
+                            //        Console.WriteLine(m2 + ";");
+                            //}
+
+                            allFiles.AddRange(m2s);
+                        }
+                        else if (type == "tex0")
+                        {
+                            var blps = GetFilesFromADT(stream, "blp");
+                            //foreach (var blp in blps)
+                            //{
+                            //    if (listfile.TryGetValue(blp, out string? filename))
+                            //        Console.WriteLine(blp + ";" + filename);
+                            //    else
+                            //        Console.WriteLine(blp + ";");
+                            //}
+
+                            allFiles.AddRange(blps);
+                        }
+                    }
+                }
+
+                allFiles = allFiles.Distinct().ToList();
+                allFiles.Sort();
+                foreach (var file in allFiles)
+                {
+                    if (listfile.TryGetValue(file, out string? filename))
+                        Console.WriteLine(file + ";" + filename);
+                    else
+                        Console.WriteLine(file + ";");
+                }
+            }
+        }
+
+        private static List<uint> GetFilesFromADT(Stream adtStream, string type)
+        {
+            var bin = new BinaryReader(adtStream);
+            long position = 0;
+
+            var files = new List<uint>();
+
+            while (position < adtStream.Length)
+            {
+                adtStream.Position = position;
+                var chunkNameBytes = bin.ReadBytes(4);
+                var chunkName = Encoding.ASCII.GetString(chunkNameBytes);
+                var chunkSize = bin.ReadUInt32();
+
+                if (type == "m2" && chunkName == "FDDM")
+                {
+                    for (int i = 0; i < chunkSize / 36; i++)
+                    {
+                        var fdid = bin.ReadUInt32();
+                        if (!files.Contains(fdid))
+                            files.Add(fdid);
+
+                        bin.BaseStream.Position += 32;
+                    }
+                }
+                else if (type == "wmo" && chunkName == "FDOM")
+                {
+                    for (int i = 0; i < chunkSize / 64; i++)
+                    {
+                        var fdid = bin.ReadUInt32();
+                        if (!files.Contains(fdid))
+                            files.Add(fdid);
+
+                        bin.BaseStream.Position += 60;
+                    }
+                }
+                else if (type == "blp" && (chunkName == "DIDM" || chunkName == "DIHM"))
+                {
+                    for (int i = 0; i < chunkSize / 4; i++)
+                    {
+                        var fdid = bin.ReadUInt32();
+                        if (!files.Contains(fdid))
+                            files.Add(fdid);
+                    }
+                }
+                
+                position = adtStream.Position + chunkSize;
+            }
+
+            return files;
         }
 
         private static string GetTypeFromFile(Stream adtStream)
